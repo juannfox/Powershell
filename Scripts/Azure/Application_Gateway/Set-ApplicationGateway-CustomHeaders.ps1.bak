@@ -1,0 +1,45 @@
+#Variables de ingreso
+$ApplicationGateway_Name=Read-Host "Ingrese nombre de Application Gateway"
+$ApplicationGateway_ResourceGroup="ma-hub-net-rg"
+$ApplicationGateway_Subscription="ma hub"
+$RewriteRuleSet_Name="HTTP-HEADERS_DEFAULT"
+
+#Cabeceras en formato de Hashtable (diccionarios clave:valor), con propiedades "Name" (nombre de cabecera) y "Value" (valor de cabecera).
+#Para agregar una nueva, agregar un Hashtable con nombre $HeaderHashtable_<Numero> (o copiar una existente, incrementar el numero y cambiar contenido).
+$HeaderHashtable_1=@{Name="X-Frame-Options";Value="SAMEORIGIN"}
+$HeaderHashtable_2=@{Name="Referrer-Policy";Value="Strict-Origin"}
+$HeaderHashtable_3=@{Name="Strict-Transport-Security";Value="max-age=31536000; includeSubDomains; preload"}
+$HeaderHashtable_4=@{Name="X-Content-Type-Options";Value="nosniff"}
+
+#Colección de Hashtables con la configuración de cada cabecera.
+$Headers_Collection=foreach ($VariableName in (Get-Variable).name){if ($VariableName.startswith("HeaderHashtable_")){(Get-Variable -Name $VariableName).Value}}
+
+#Cambia el contexto a la suscripcion del APPGW
+Set-AzContext -Subscription $ApplicationGateway_Subscription
+#Obtiene el objeto del APPGW
+$ApplicationGateway = Get-AzApplicationGateway -Name $ApplicationGateway_Name -ResourceGroupName $ApplicationGateway_ResourceGroup
+#Arma una colección de Reglas vacia
+$RewriteRule_List=@()
+
+#Por cada cabecera de la lista, configura el Application Gateway
+foreach ($Header in $Headers_Collection){
+    #Obtiene datos del Header en esta iteracion
+    $Header_Name=$Header["Name"]
+    $Header_Value=$Header["Value"]
+    #Compone el nombre de la regla en mayusculas
+    $RewriteRule_Name=$Header_Name.toUpper()
+    #Configura la cabecera
+    $Header_Configuration = New-AzApplicationGatewayRewriteRuleHeaderConfiguration -HeaderName $Header_Name -HeaderValue $Header_Value
+    #Configura un set de acción con la configuración de cabecera definida
+    $ActionSet = New-AzApplicationGatewayRewriteRuleActionSet -ResponseHeaderConfiguration $Header_Configuration
+    #Configura la regla de Rewrite
+    $RewriteRule = New-AzApplicationGatewayRewriteRule -Name $RewriteRule_Name -ActionSet $ActionSet
+	#Agrega la regla a la coleccion de reglas
+	$RewriteRule_List+=$RewriteRule
+}
+
+#Arma un set de reglas de Rewrite, que en este caso se relaciona 1:1 con cada regla
+$RewriteRuleSet = New-AzApplicationGatewayRewriteRuleSet -Name $RewriteRuleSet_Name -RewriteRule $RewriteRule_List
+#Agrega el RewriteRuleSet -y todas sus reglas- creado al APPGW
+Add-AzApplicationGatewayRewriteRuleSet -ApplicationGateway $ApplicationGateway -Name $RewriteRuleSet_Name -RewriteRule $RewriteRuleSet.RewriteRules
+Set-AzApplicationGateway -ApplicationGateway $ApplicationGateway
