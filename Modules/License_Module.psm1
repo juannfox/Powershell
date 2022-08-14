@@ -1,83 +1,98 @@
 <#
-    Modulo que trabaja con las licencias de Azure AD (que tambien reflejan las de Office 365)
+    Authored by Juan Fox in 2021
+    This module provides functions to work with Azure AD (AAD) licenses (Office 365 licenses too).
 #>
 
-
-#Establece la zona de uso de un usuario, necesaria para las licencias
 function Set_UsageLocation ($User_ObjectId,$Usage_Location="AR"){
+    <#
+        Sets the usage location for an AAD user, which is necessary to assign a license.
+        Parameters:
+            - User_ObjectId: The objectId for the target user.
+            - Usage_Location: The usage-location code (Defaults to "AR" for Argentina).
+        Return: Boolean for success.
+    #>
     $Assigned=$False
-    #Establece zona de uso, para que se pueda aplicar la licencia
-    Write-Host "Estableciendo zona de uso $Usage_Location."
+    #Sets the usage location
+    Write-Output "Establishing usage location: $Usage_Location."
     Set-AzureADUser -ObjectId $User_ObjectId -UsageLocation $Usage_Location
     Start-Sleep 5
 
-    #Valida asignacion de zona de uso
+    #Verifies success
     if ((Get-AzureADUser -ObjectId $User_ObjectId).UsageLocation -eq $Usage_Location){
         $Assigned=$True
     }else{
-        Write-Error "Hubo un error al establecer zona de uso $Usage_Location."
+        Write-Error "There was an error setting usage location: $Usage_Location."
     }
     Return $Assigned
 }
 
-#Asigna una licencia especifica a un usuario
 function Set_License ($User_ObjectId, $SkuId){
+    <#
+        Assigns a specific license to an user. The license is assigned as is and all the default products it contains are activated.
+        Parameters:
+            - User_ObjectId: The objectId for the target user.
+            - SkuId: The SkuId for the license.
+        Return: Boolean for success.
+    #>
     $Assigned=$False
-    #Asigna zona de uso
+    #Sets the usage zone
     $UsageLocation_Set=Set_UsageLocation -User_ObjectId $User_ObjectId -Usage_Location $Usage_Location
-    if ($UsageLocation_Set){ #Verifica asignacion
-        #Crea una lista de licencias en formato adecuado
+    if ($UsageLocation_Set){ #Verifies if the usage location is set
+        #Creates a licenses list object in the necessary format
         $Licenses_Object = New-Object -TypeName Microsoft.Open.AzureAD.Model.AssignedLicenses
-        #Arma una licencia vacia
-        $License = New-Object -TypeName Microsoft.Open.AzureAD.Model.AssignedLicense 
-        $License.SkuId = $SkuId #Carga el SKUID
-        $Licenses_Object.AddLicenses = $License #Carga la licencia en el objeto de lista de licencias
+        #Creates an empty license object in the necessary format
+        $License = New-Object -TypeName Microsoft.Open.AzureAD.Model.AssignedLicense
+        $License.SkuId = $SkuId #Loads the SkuId
+        $Licenses_Object.AddLicenses = $License #Loads the license into the licenses object
 
-        #Asigna la licencia
-        Write-Host "Asignando licencia $SkuId."
+        #Adds the license
+        Write-Output "Adding license $SkuId."
         Set-AzureADUserLicense -ObjectId $User_ObjectId -AssignedLicenses $Licenses_Object -ErrorAction SilentlyContinue -ErrorVariable Script_Last_Error
         Start-Sleep 5
 
-        #Valida asignación de licencia
+        #Verifies success
         $User_SkuIDs=(Get-AzureADUser -ObjectId $User_ObjectId).AssignedLicenses.SkuId
         if ($SkuID -in $User_SkuIDs){
-            $Assigned=$True   
+            $Assigned=$True
         }else{
-            Write-Error "Hubo un error al asignar la licencia $SkuId."
+            Write-Error "There was an error adding license $SkuId."
         }
     }
 
     Return $Assigned
 }
 
-
-#Quita una licencia especifica de las licencias asignadas a un usuario
-
 function Remove_License ($User_ObjectId, $SkuId,$Debug){
+    <#
+        Removes a specific license from an user.
+        Parameters:
+            - User_ObjectId: The objectId for the target user.
+            - SkuId: The SkuId for the license.
+            - Debug: Wether to enable debug for verbose output.
+        Return: Boolean for success.
+    #>
     $Removed=$False
     $Assigned_Licenses_Before=((Get-AzureADUser -ObjectId $User_ObjectId).AssignedLicenses).count
-    if ($Debug){Write-Host "Quitando licencia <"+$SkuId+"> de usuario <"+$User_ObjectId+">."}
+    if ($Debug){Write-Output "Removing license with SkuId <"+$SkuId+"> from user <"+$User_ObjectId+">."}
 
-    #Crea una lista de licencias en formato adecuado
+    #Creates a licenses list object in the necessary format
     $Licenses_Object = New-Object -TypeName Microsoft.Open.AzureAD.Model.AssignedLicenses
-    #Arma una licencia vacia
-    $License = New-Object -TypeName Microsoft.Open.AzureAD.Model.AssignedLicense 
-    $Licenses_Object.AddLicenses = $License #Carga la licencia en el objeto de lista de licencias
+    #Creates an empty license object in the necessary format
+    $License = New-Object -TypeName Microsoft.Open.AzureAD.Model.AssignedLicense
+    $Licenses_Object.AddLicenses = $License #Loads the license
 
-    #Asigna la licencia
-    Start-Sleep 5
-
-    #Crea una licencia e indica que SKUID eliminar
+    #Creats a license object
     $License = New-Object -TypeName Microsoft.Open.AzureAD.Model.AssignedLicenses
+    #Removes the license from the object
     $License.RemoveLicenses = $SkuId
-    #Remueve la licencia
+    #Removes the license
     Set-AzureADUserLicense -ObjectId $User_ObjectId -AssignedLicenses $License
 
-    #Espera y busca el cambio, para ver si tomo efecto
+    #Waits before checking for success
     $WaitTime=15
     $TimeElapsed=0
     While((-not($Removed))-and($TimeElapsed -lt $WaitTime)){
-        #Verifica si se elimino
+        #Verifies if the license was removed
         $Assigned_Licenses_After=(Get-AzureADUser -ObjectId $User_ObjectId).AssignedLicenses
         if (($Assigned_Licenses_Before-$Assigned_Licenses_After.count) -eq 1){
             $Removed=$True
@@ -87,7 +102,7 @@ function Remove_License ($User_ObjectId, $SkuId,$Debug){
         }
     }
 
-    if ($Debug){Write-Host "Resultado de quitar licencia: "+$Removed+"."}
-    
+    if ($Debug){Write-Output "Result of removing the license: "+$Removed+"."}
+
     Return $Removed
 }
