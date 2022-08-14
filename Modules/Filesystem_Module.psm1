@@ -1,5 +1,6 @@
 <#
-This module provides useful functions to work with Windows filesystem.
+    Authored by Juan Fox in 2021.
+    This module provides useful functions to work with Windows filesystem.
 #>
 
 #Extracts the file or folder name from a full path.

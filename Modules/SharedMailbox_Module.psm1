@@ -1,199 +1,232 @@
 <#
-Modulo que brinda funciones de operaciones con Shared Mailboxes de Exchange.
-Requiere que exista una sesion de Powershell contra Exchange importada.
+    Authored by Juan Fox in 2021.
+    This module provides functions to easily operate with Shared Mailboxes from Exchange.
+    Pre-requisites: An Exchange session with it's PS module must be imported before.
+    Comment: This does need some DRY-ness, but it works.
 #>
 
-
-#Transfiere los permisos de un usuario sobre buzones compartidos a otro.
-function Transfer-SharedMailboxPermissions($Source_Identity,$Identity,$Debug){
+function Copy-SharedMailboxPermission($Source_Identity,$Identity,$Debug){
+    <#
+        Transfers an users Shared-Mailbox permissions to another. This would mean that if an user has full access to a mailbox, then the other
+        one would end up having the same permission level.
+        Works on two different aspects:
+            - Mailbox permissions: The actual mailbox that holds the emails and Exchange functionalities.
+            - Recipient permissions: The sender address for the mailbox.
+        This might take a good while to finish, specially on a big Exchange setup.
+        Parameters:
+            - Source_Identity: The identity (meaning an Exchange object) of the source user.
+            - Identity: The identity (meaning an Exchange Object) of the target user.
+            - Debug: Wether to enable verbose output.
+        Return: Boolean for success.
+    #>
     $Success=$false
 
-    #Verifica que la identidad no sea nula
-    if (-not(($Identity -eq $null)-or($Source_Identity -eq $null))){
-        #Obtiene los mailbox compartidos
+    #Verifies that the identities aren'tt null
+    if (-not(($null -eq $Identity)-or($null -eq $Source_Identity))){
+        #Gets all Shared Mailboxes (objects)
         $SharedMailboxes=Get-Mailbox -RecipientTypeDetails SharedMailbox
 
-        #Si obtuvo mailboxes
+        #With the shared mailboxes -if not null-
         if ($SharedMailboxes){
 
-            #Identifica los permisos de buzon que tiene el usuario
+            #Identifies mailbox permissions for the source user
             $MailboxPermissions= $SharedMailboxes | Get-MailboxPermission -User $Source_Identity
-            #Boolean para guardar el estado de las asignaciones
+            #Boolean for further use
             $MailboxPermissionsTransfered=$true
-            #Si existen permisos
+            #If permissions exist
             if ($MailboxPermissions){
-                #Recorre la lista de permisos
+                #Iteration over permissions
                 foreach ($MailboxPermission in $MailboxPermissions){
-                    #Agrega el permiso al usuario
+                    #Adds the current permission to the target user
                     Add-MailboxPermission -Identity ($MailboxPermission.identity) -AccessRights ($MailboxPermission.accessrights) -User $Identity -AutoMapping $true -Confirm:$false | Out-Null
-                    #Verifica si hubo errores
+                    #Verifies success
                     if (-not($?)){
-                        #Si hubo errores, corta el ciclo
+                        #On error, break the loop
                         $MailboxPermissionsTransfered=$false
                         Break
                     }
-                }  
+                }
             }else{
-                if ($Debug){Write-Host "No se encontraron permisos de buzon."}
+                if ($Debug){Write-Output "No mailbox permissions found."}
             }
 
-            #Identifica los permisos de envio que tiene el usuario
+            #Identifies recipient permissions for the source user
             $RecipientPermissions= $SharedMailboxes | Get-RecipientPermission -Trustee $Source_Identity
-            #Boolean para guardar el estado de las asignaciones
+            #Boolean for future use
             $RecipientPermissionsTransfered=$true
-            #Si existen permisos
+            #If permissions found
             if ($RecipientPermissions){
-                #Recorre la lista de permisos
+                #Iterates over permissions
                 foreach ($RecipientPermission in $RecipientPermissions){
-                    #Agrega el permiso al usuario
+                    #Adds the current permission to the target user
                     Add-RecipientPermission -Identity ($RecipientPermission.identity) -AccessRights ($RecipientPermission.accessrights) -Trustee $Identity -Confirm:$false | Out-Null
-                    #Verifica si hubo errores
+                    #Verifies success
                     if (-not($?)){
-                        #Si hubo errores, corta el ciclo
+                        #On error, break the loop
                         $RecipientPermissionsTransfered=$false
                         Break
                     }
                 }
             }else{
-                if ($Debug){Write-Host "No se encontraron permisos de envio."}
+                if ($Debug){Write-Output "No recipient permissions found."}
             }
 
-            #Verifica el exito de ambas operaciones
+            #Verifies success
             if ($MailboxPermissionsTransfered -and $RecipientPermissionsTransfered){
                 $Success=$true
-                if ($Debug){Write-Host "Permisos de buzones y envio transferidos."}
+                if ($Debug){Write-Output "Recipient and Mailbox permissions transfered."}
             }else{
                 $Success=$false
-                if ($Debug){Write-Host "Ocurrieron errores al transferir permisos de buzones y envio."}
+                if ($Debug){Write-Output "Errors occured when transfering permissions."}
             }
 
         }else{
-            if ($Debug){Write-Host "Error al obtener buzones de correo y sus permisos."}
+            if ($Debug){Write-Output "Errors occured when fetching Shared Mailboxes.."}
             $Success=$false
         }
-       
+
     }else{
         $Success=$false
-        if ($Debug){Write-Host "Se recibio una identidad nula."}
+        if ($Debug){Write-Output "One of the identities was null."}
     }
     Return $Success
 }
 
-#Quita los permisos de un buzon compartido de un usuario
-function Remove-SharedMailboxPermissions($Identity,$Debug){
+function Revoke-SharedMailboxPermission($Identity,$Debug){
+    <#
+        Removes an users Shared-Mailbox permissions (all).
+        Works on two different aspects:
+            - Mailbox permissions: The actual mailbox that holds the emails and Exchange functionalities.
+            - Recipient permissions: The sender address for the mailbox.
+        This might take a good while to finish, specially on a big Exchange setup.
+        Parameters:
+            - Identity: The identity (meaning an Exchange Object) of the target user.
+            - Debug: Wether to enable verbose output.
+        Return: Boolean for success.
+    #>
     $Success=$false
 
-    #Verifica que la identidad no sea nula
-    if (-not($Identity -eq $null)){
+    #Verifies that the identity is not null
+    if (-not($null -eq $Identity)){
 
-        #Obtiene los mailbox compartidos
+        #Fetches Shared Mailboxes
         $SharedMailboxes=if (-not($SharedMailboxes)){Get-Mailbox -RecipientTypeDetails SharedMailbox}
 
-        #Si obtuvo mailboxes
+        #If mailboxes were fetched
         if ($SharedMailboxes){
 
-            #Identifica los permisos de buzon que tiene el usuario
+            #Identifies Mailbox Permissions assigned to the user
             $MailboxPermissions= $SharedMailboxes | Get-MailboxPermission -User $Identity
-            #Boolean para guardar el estado de las asignaciones
+            #Boolean for future usage
             $MailboxPermissionsRemoved=$true
-            #Si existen permisos
+            #If permissions were found
             if ($MailboxPermissions){
-                #Recorre la lista de permisos
+                #Iterates over permissions
                 foreach ($MailboxPermission in $MailboxPermissions){
-                    #Agrega el permiso al usuario
+                    #Removes the permission for the user
                     Remove-MailboxPermission -Identity ($MailboxPermission.identity) -AccessRights ($MailboxPermission.accessrights) -User $Identity -Confirm:$false #| Out-Null
-                    #Verifica si hubo errores
+                    #Verifies success
                     if (-not($?)){
-                        #Si hubo errores, corta el ciclo
+                        #On error, break loop
                         $MailboxPermissionsRemoved=$false
                         Break
                     }
-                }  
+                }
             }else{
-                if ($Debug){Write-Host "No se encontraron permisos de buzon."}
+                if ($Debug){Write-Output "No Mailbox Permissions found."}
             }
-        
-            #Identifica los permisos de envio que tiene el usuario
+
+            #Identifies Recipient Permissions assigned to the user
             $RecipientPermissions= $SharedMailboxes | Get-RecipientPermission -Trustee $Identity
             #Boolean para guardar el estado de las asignaciones
             $RecipientPermissionsRemoved=$true
-            #Si existen permisos
+            #If permissions were found
             if ($RecipientPermissions){
-                #Recorre la lista de permisos
+                #Iterates over permissions
                 foreach ($RecipientPermission in $RecipientPermissions){
-                    #Agrega el permiso al usuario
+                    #Removes the permission for the user
                     Remove-RecipientPermission -Identity ($RecipientPermission.identity) -AccessRights ($RecipientPermission.accessrights) -Trustee $Identity -Confirm:$false | Out-Null
-                    #Verifica si hubo errores
+                    #Verifies success
                     if (-not($?)){
-                        #Si hubo errores, corta el ciclo
+                        #On error, break loop
                         $RecipientPermissionsRemoved=$false
                         Break
                     }
                 }
             }else{
-                if ($Debug){Write-Host "No se encontraron permisos de envio."}
+                if ($Debug){Write-Output "No Recipient Permissions found."}
             }
 
-            #Verifica el exito de ambas operaciones
+            #Verifies success
             if ($MailboxPermissionsRemoved -and $RecipientPermissionsRemoved){
                 $Success=$true
-                if ($Debug){Write-Host "Permisos de buzones y envio removidos."}
+                if ($Debug){Write-Output "Mailbox and Recipient permissions removed."}
             }else{
-                if ($Debug){Write-Host "Ocurrieron errores al remover permisos de buzones y envio."}
+                if ($Debug){Write-Output "Errors occured when removing permissions."}
                 $Success=$false
             }
 
         }else{
-            if ($Debug){Write-Host "Error al obtener buzones de correo y sus permisos."}
+            if ($Debug){Write-Output "Errors occured when fetching Shared Mailboxes."}
             $Success=$false
         }
     }else{
         $Success=$false
-        if ($Debug){Write-Host "Se recibio una identidad nula."}
+        if ($Debug){Write-Output "One of the identities was null."}
     }
 
     Return $Success
 }
 
 
-function Get-SharedMailboxPermissions($Identity,$Debug){
+function Get-SharedMailboxPermission($Identity,$Debug){
+    <#
+        Gets an users Shared-Mailbox permissions.
+        Works on two different aspects:
+            - Mailbox permissions: The actual mailbox that holds the emails and Exchange functionalities.
+            - Recipient permissions: The sender address for the mailbox.
+        This might take a good while to finish, specially on a big Exchange setup.
+        Parameters:
+            - Identity: The identity (meaning an Exchange Object) of the target user.
+            - Debug: Wether to enable verbose output.
+        Return: Boolean for success.
+    #>
 	$MailboxPermissions=$false
 
-	#Verifica que la identidad no sea nula
-	if (-not($Identity -eq $null)){
+	#Verifies that the identity is not null
+	if (-not($null -eq $Identity)){
 
-		#Obtiene los mailbox compartidos
+		#Fetches Shared Mailboxes
 		$SharedMailboxes=if (-not($SharedMailboxes)){Get-Mailbox -RecipientTypeDetails SharedMailbox}
 
-		#Si obtuvo mailboxes
+		#Validates that mailboxes were fetched
 		if ($SharedMailboxes){
 
-			#Identifica los permisos de buzon que tiene el usuario
+			#Identifies Mailbox Permissions assigned to the user
 			$MailboxPermissions= $SharedMailboxes | Get-MailboxPermission -User $Identity
-			#Si existen permisos
+			#If permissions were found
 			if ($MailboxPermissions){
-				#Los imprime
+				#Prints them
 				$MailboxPermissions
 			}else{
-				if ($Debug){Write-Host "No se encontraron permisos de buzon."}
+				if ($Debug){Write-Output "No Mailbox permissions were found."}
 			}
 
-			#Identifica los permisos de envio que tiene el usuario
+			#Identifies Recipient Permissions assigned to the user
 			$RecipientPermissions= $SharedMailboxes | Get-RecipientPermission -Trustee $Identity
-			#Si existen permisos
 			if ($RecipientPermissions){
 				$RecipientPermissions
 			}else{
-				if ($Debug){Write-Host "No se encontraron permisos de envio."}
+				if ($Debug){Write-Output "No Mailbox permissions were found."}
 			}
 
 		}else{
-			if ($Debug){Write-Host "Error al obtener buzones de correo y sus permisos."}
+			if ($Debug){Write-Output "Error fetching Shared Mailboxes."}
 			$MailboxPermissions=$false
 		}
 	}else{
 		$MailboxPermissions=$false
-		if ($Debug){Write-Host "Se recibio una identidad nula."}
+		if ($Debug){Write-Output "One of the identities was null."}
 	}
 	Return $MailboxPermissions
 }
