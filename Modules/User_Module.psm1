@@ -24,10 +24,10 @@ function User_AAD_Get_UserObjectId ($Filter_Name,$Filter_Value){
 
     #Verifies that object is unique and valid
     if (($User_Object -Is [object])-And($User_Count -eq "1")){
-        Write-Host "Trabajando con $User_DisplayName ($User_ObjectId)."
+        Write-Output "Trabajando con $User_DisplayName ($User_ObjectId)."
         $Return_ObjectId=$User_ObjectId #Success
     }else{
-        Write-Host "Object is invalid or multiple."
+        Write-Output "Object is invalid or multiple."
     }
     Return $Return_ObjectId
 }
@@ -40,7 +40,7 @@ function User_AD_Get_CloudRelatedObject($DistinguishedName){
         Parameters:
             - DistinguishedName: Distinguished Name of the related on-premises AD user.
         Return: ObjectId of the user if found, $Null if not found.
-    #>    
+    #>
     $ObjectId=$null
     $AADUser_Object=$null
 
@@ -51,12 +51,12 @@ function User_AD_Get_CloudRelatedObject($DistinguishedName){
         #Stores data
         $ObjectId=$AADUser_Object.ObjectId
     }
-    
+
     #Verifies that object is unique and valid
     if (($AADUser_Object -isnot [object])-Or($AADUser_Object.count -ne "1")){
         $ObjectId=$null #If error
-    }    
-    
+    }
+
     Return $ObjectId
 }
 
@@ -65,7 +65,7 @@ function User_AD_Get_UserObject ($SAMAccountName){
         Gets an on-premises AD user's object by its SAMAccountName.
          Parameters:
             - SAMAccountName: SAMAccountName (username) of the user.
-        Return: Object of the user if found, $Null if not found.       
+        Return: Object of the user if found, $Null if not found.
     #>
     $Return_Object=$False #Initial value
     $AD_User_Object=$null
@@ -87,25 +87,25 @@ function User_Input_User($Message){
         Interactively asks for input to fetch an AD-OnPremises user object based on SAMAccountName (Username) and allows for retries.
         Parameters:
             - Message: Message to show previouis to the input.
-        Return: Object of the user when found.      
+        Return: Object of the user when found.
     #>
     $Return_Object=$False #Initial value
     #User input
-    Write-Host $Message
-    $Input=Read-Host "Enter username to fetch" 
+    Write-Output $Message
+    $User_Input=Read-Host "Enter username to fetch"
 
     #Gets the user object
-    $AD_User_Object=User_AD_Get_UserObject -Samaccountname $Input
+    $AD_User_Object=User_AD_Get_UserObject -Samaccountname $User_Input
     #Verifies that object is unique and valid
-    if (($AD_User_Object -is [Object])-And($AD_User_Object.samaccountname -eq $Input)){
+    if (($AD_User_Object -is [Object])-And($AD_User_Object.samaccountname -eq $User_Input)){
         $Name=$AD_User_Object.Name
-    	Write-Host "Detected user: <$Name>. Ok to continue?"
+    	Write-Output "Detected user: <$Name>. Ok to continue?"
 		$Choice = Read-Host "Enter y/n"
 		if ($Choice -eq 'y'){
             $Return_Object=$AD_User_Object #Stores the object
-        } 
+        }
     }else{
-        Write-Host "User $Input not found in AD. Try again..."
+        Write-Output "User $User_Input not found in AD. Try again..."
         $Return_Object=User_Input_User -Message $Message #Recursive self-call
     }
     Return $Return_Object #Only return when successful
@@ -120,7 +120,7 @@ function User_AD_Wait_Changes($User_Samaccountname,$Property_Name,$Property_Targ
             - Property_TargetValue: The expected value of the property.
             - Time_Wait: The time to wait in seconds.
             - Time_Step: The time between intervals in seconds
-        Return: Boolean for success.      
+        Return: Boolean for success.
     #>
     $User_Object,$Property_DetectedValue
     $Success,$AboveTimeLimit,$ChangesNotFound
@@ -132,7 +132,7 @@ function User_AD_Wait_Changes($User_Samaccountname,$Property_Name,$Property_Targ
         $Property_DetectedValue=$User_Object.$Property_Name
         #Compares the actual value to the desired one
         if ($Property_DetectedValue -eq $Property_TargetValue){
-            $ChangesNotFound=$False #Cut condition 
+            $ChangesNotFound=$False #Cut condition
         }else{
             $ChangesNotFound=$True #Cut condition
             #Waits
@@ -144,54 +144,58 @@ function User_AD_Wait_Changes($User_Samaccountname,$Property_Name,$Property_Targ
         }
 
     }while($ChangesNotFound -and $AboveTimeLimit)
-    
+
     #Returns success if changes found.
     $Success=-not $ChangesNotFound
 
     Return $Success
 }
 
-#Funcion que respalda el perfil de un usuario de AD en un archivo de texto plano.
 Function User_AD_Backup_Properties ($User_Object, $Backup_Path){
+    <#
+        Backs up the properties of an AD user in a plain-text file.
+        Parameters:
+            - User_Object: The AD object to backup.
+            - Backup_Path: The path for the output file.
+        Return: Boolean for success.
+    #>
     $Success
-    
-    #Si no logra llegar a la carpeta de destino, se defaultea en %TEMP%
+
+    #Default path in TEMP (user level)
     if (-not(Test-Path $Backup_Path)){
         $Backup_Path=$env:TEMP
     }
 
-    #Verifica si existe la carpeta contenedora de destino
+    #Creates the folder if it does not exist.
 	If (-Not(Test-Path ("$Backup_Path\"+$User_Object.samaccountname))){
-        #Crea la carpeta
         New-Item -Name $User_Object.samaccountname -Path $Backup_Path -ItemType Directory
     }
 
-    #Define el nombre del archivo de salida.
+    #Output file name.
     $Backup_File_Path="$Backup_Path\"+$User_Object.samaccountname+"\"
     $Backup_File_Name=$User_Object.samaccountname+"-AD.bkp"
 
-    #Verifica si existe el archivo de destino
+    #Verifies that the file does not exist already and creates it
     if (-not(Test-Path "$Backup_File_Path\$Backup_File_Name")){
-        #Lo crea
         New-Item -Path $Backup_File_Path -ItemType File -Name $Backup_File_Name | Out-Null
     }
 
-    #Verifica que se haya creado el archivo
+    #Verifies that the file exists
     if (Test-Path "$Backup_File_Path\$Backup_File_Name"){
-        #Inserta comentario con fecha, para separar backup de otro que pudiera existir (modo Append).
-        Add-Content -Path "$Backup_File_Path\$Backup_File_Name" -Value ('#'+(Get-Date -Format "dd/MM/yyyy"))
+        #Inserts header comment with the current date in MMDDYYYY format
+        Add-Content -Path "$Backup_File_Path\$Backup_File_Name" -Value ('#'+(Get-Date -Format "MM/dd/yyyy"))
 
-        #Arma una lista de los atributos.
+        #List with atributes/properties
         $PropertyList=$User_Object.PropertyNames
-        #La escribe en un archivo linea a linea, con formato de diccionario (Append).
+        #Writes each property to a file in append mode
         ForEach ($Property In $PropertyList){
             Add-Content -Path "$Backup_File_Path\$Backup_File_Name" -Value ("$Property"+":"+$User_Object.$Property)
         }
 
-        #Verifica que exista contenido
-        if (-not((Get-Content "$Backup_File_Path\$Backup_File_Name") -eq $null)){
+        #Verifies that content is not null
+        if (-not($null -eq(Get-Content "$Backup_File_Path\$Backup_File_Name"))){
             $Success=$True
-            Write-Host "Perfil de usuario en texto plano respaldado en ruta <$Backup_File_Path\$Backup_File_Name>."
+            Write-Output "User profile backuped up in <$Backup_File_Path\$Backup_File_Name>."
         }else{
             $Success=$False
         }
@@ -201,62 +205,58 @@ Function User_AD_Backup_Properties ($User_Object, $Backup_Path){
     Return $Success
 }
 
-
-
-#Transfiere los grupos de AD de un usuario base a un usuario nuevo. Notese que no elimina los anteriores.
 function User_Transfer_ADGroups($Source_User,$Target_User,$Filter_ADGroup,$Debug){
+    <#
+        Transfers an AD user's groups to another -without removing the old ones-.
+        Parameters:
+            - Source_User: The source user (with the origin groups).
+            - Target_User: The target user.
+            - Filter_ADGroup: An AD group that is used as a filter for those groups to exclude. Any group that is member of this group will be ignored.
+            - Debug: Wether to enable debug mode with verbose messages.
+        Return: Boolean for success.
+    #>
     $Success=$False
     $ADGroups_Assigned=0
     $ADGroups_Filtered=0
     $Filter_ADGroup_Members=$null
 
-    if ($Debug){Write-Host "Transfiriendo grupos de usuario base <$Source_User> a usuario destino <$Target_User>."}
+    if ($Debug){Write-Output "Transfering AD groups from user <$Source_User> to <$Target_User>."}
 
-    #Obtiene los miembros del grupo de AD de filtros. Notese que los miembros son grupos
+    #Gets filter group members (other groups) to create an excluded-list
     try{
-        if ($Debug){Write-Host "Obteniendo miembros de grupo filtro <$Filter_ADGroup>."}
+        if ($Debug){Write-Output "Fetching filter groups from group <$Filter_ADGroup>."}
         $Filter_ADGroup_Members=Get-ADGroupMember -Identity $Filter_ADGroup
     }catch{
-        Write-Host "Error al obtener los miembros del grupo filtro <$Filter_ADGroup>" -ForegroundColor $MSG_Color_Error
+        Write-Output "Error fetching filter groups from <$Filter_ADGroup>"
     }
 
     try{
-        #Obtiene los grupos asignados al usuario base. Cada grupo es un objeto y una de sus propiedades un DN
+        #Gets the users the source user is member of
         $Source_User_ADGroups=(Get-ADUser $Source_User -properties memberof).memberof
         foreach ($Group in $Source_User_ADGroups){
-            #Verifica si es un grupo a filtrar
+            #Verifies if the group needs to be exlucded
             if ($Group -notin $Filter_ADGroup_Members.distinguishedname){
-                #Agrega el usuario de destino al grupo
-                if ($Debug){Write-Host "Agregando grupo <$Group>."}
+                #Adds the target user to the group
+                if ($Debug){Write-Output "Adding group <$Group>."}
                 Add-ADGroupMember -Identity $Group -Members $Target_User -ErrorAction SilentlyContinue
                 if ($?){$ADGroups_Assigned+=1}
             }else{
-                if ($Debug){Write-Host "Filtrando grupo <$Group>."}
+                if ($Debug){Write-Output "Filtering group <$Group>."}
                 $ADGroups_Filtered+=1
             }
         }
 
-        #Verifica exito
+        #Verifies success
         if (($ADGroups_Assigned+$ADGroups_Filtered) -eq $Source_User_ADGroups.count){
             $Success=$True
         }else{
             $Success=$False
         }
     }catch{
-        Write-Host "Error al obtener grupos asignados al usuario base <$Source_User>." -ForegroundColor $MSG_Color_Error
+        Write-Output "Error fetching groups the source user <$Source_User> is member of."
         $Success=$False
     }
 
     return $Success
-}
-
-
-#Espera y muestra un porcentaje, iterando cada 1 segundo hasta $Wait segundos.
-function Wait-Progess($Wait){
-    for ($i = 0; $i -le $Wait; $i++ ){
-        $Percentage=($i*100)/$Wait
-        Write-Progress -Activity "Task in progress." -Status ("Time elapsed: $i/"+$Wait+"s") -PercentComplete $Percentage
-        Start-Sleep 1 | out-null
-    }
 }
 

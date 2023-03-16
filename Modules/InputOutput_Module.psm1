@@ -1,14 +1,21 @@
 <#
-Modulo que brinda funciones de operaciones sobre Input y Output de consola.
+    Authored by Juan Fox in 2021
+    This module provides functions for input-output operations from a Powershell console.
 #>
 
-#Guarda una credencial encriptada en un archivo.
-function Store-PSCredential($Credential,$Path){
+function Backup-PSCredential([PSCredential]$Credential,$Path){
+    <#
+        Stores an encripted password in a local file. Can only be decrypted by the same user importing it back into the console.
+        Parameters:
+            - Credential: The PSCredential object to store.
+            - Path: The path for the encrypted output file.
+        Returns: The file path or $False if error.
+    #>
     $Name_Suffix=Get-Random -Maximum 99999999 -Minimum 11111111
     $Name_Prefix="pscrdenc"
     $File_Extension=""
     $FilePath=$Env:Temp
-    if ($Path -eq $null){
+    if ($null -eq $Path){
         $Path=$FilePath+"\"+$Name_Prefix+$Name_Suffix+$File_Extension
     }
     $Credential | Export-CliXml -Path $Path
@@ -16,91 +23,124 @@ function Store-PSCredential($Credential,$Path){
     Return $Path
 }
 
-#Recupera una credencial encriptada de un archivo
 function Restore-PSCredential($Path){
+    <#
+        Restores an encripted password from a local file (stored using Backup-PSCredential commandlet).
+        Parameters:
+            - Path: The path for the encrypted credential file.
+        Returns: The PSCredential object or $null if error.
+    #>
     $Credential=$null
     if (Test-Path $Path){
         $Credential = Import-CliXml -Path $Path
         if (-not($?)){$Credential=$null}
     }
-    Return $Credential    
+    Return $Credential
 }
 
-#Normaliza o capitaliza un string, devolviendo cada palabra con su primer letra en mayusculas.
 function Get-CapitalizedString($StringValue){
+    <#
+        Capitalizes a string, meaning it turns the first letter of each word into upper-case.
+        Parameters:
+            - StringValue: The input string.
+        Returns: The processed string or the original if error.
+    #>
     $NewStringValue=$null
 
-    #Verifica que sea un string
+    #Verifies that the input is a string.
     if ($StringValue -is [String]){
-        #Limpia el string de espacios al principio o al final
+        #Cleans leading and trailing spaces.
         $StringValue=($StringValue.Trimstart(" ")).TrimEnd(" ")
-        #Arma un vector separando por espacios
+        #Creates an array based on spaces
         $Array=$StringValue -split " "
-        #Recorre el vector, palabra a palabra
+        #Word to word iteration
         foreach ($Word in $Array){
-            #Pasa la palabra a minusculas
+            #Convert to lower
             $Word=$Word.tolower()
-            #Prepara la primer letra en mayusculas
+            #Capitalize the first letter
             $FirstLetter=($Word.substring(0,1)).toupper()
-            #Reemplaza la letra en la palabra
+            #Actual remplacement in the word
             $Word=$FirstLetter+$Word.remove(0,1)
 
-            #Concatena el string a devolver con la palabra
+            #Concatenates the word into the return string
             $NewStringValue+="$Word "
         }
     }
 
-    #Devuelve el original si no se logro armar
-    if ($NewStringValue -eq $null){$NewStringValue=$StringValue}
+    #The processed string or the original if error.
+    if ($null -eq $NewStringValue){$NewStringValue=$StringValue}
     Return $NewStringValue
 }
 
-#Funcion que permite ingreso multi-linea
 function Read-HostMultiLine($Message,$Clear=$true){
-    $MultiLine=$null #Cadena que se utiliza para almacenar multi-linea
-    $Auxiliar=$null #Cadena auxiliar
-    #Si el mensaje esta vacio, muestra un default
-    if ($Message -eq $null){$Message="Enter multi-line input and press [ENTER]:"}
-    #Muestra mensaje de Input
-    Write-Host $Message
+    <#
+        Allows for multi-line user input in console.
+        Parameters:
+            - Message: The message to show for the prompt (can be omitted to use default).
+            - Clear: Wether to clear the screen after input (defaults to true).
+        Returns: The user input
+    #>
+    $MultiLine=$null #Empty string for the multi-line content
+    $Auxiliar=$null #Axuiliary sring
+    #If the message is null, it shows a default value:
+    if ($null -eq $Message){$Message="Enter multi-line input and press [ENTER]:"}
+    #Shows input message
+    Write-Output $Message
 
-    #Hace un ciclo mientras que la ultima linea ingresada no sea nula
+    #Loop until the last line is null
     do {
-        #Toma un ingreso de una linea y lo guarda en la variable auxiliar
+        #User input and store into an auxiliary variable
         Read-Host | Set-Variable Auxiliar
-        #Agrega el contenido de la variable auxiliar al de la variable multilinea, combinando con el caracter de nueva linea o CRLF
+        #Adds the line content into the multi-line content and separates it with the new-line character
         Set-Variable -Name MultiLine -Value ($MultiLine+"`n"+$Auxiliar)
     }while($Auxiliar)
 
-    #Limpia la pantalla, si esta activo
+    #Clears the screen, if enabled
     if ($Clear){Clear}
 
-    #Quita los renglones sobrantes al principio y al final
+    #Trims leading and trailing whitespaces
     $MultiLine = $MultiLine.trim()
-    #Retorna resultado
     Return $MultiLine
 }
 
-#Reemplaza caracteres ilegales en un string
 function Replace_Ilegal_Characters($String){
-    #Lista de caracteres y sus reemplazos
+    <#
+        #Replaces ilegal characters in a string.
+        Parameters:
+            - String: The input string
+        Returns: Processed string or the original if error or non found.
+    #>
+    #A map with ilegal characters and their replacements
     $CharacterDictionary=@{"á"="a";"é"="e";"í"="i";"ó"="o";"ü"="u";"ñ"="n";"-"="";"_"="";"."="";","="";"*"="";"#"="";"'"=""}
-    
-    #Verifica que el string no sea nulo
-    $StringIsNotNull=(-not($String -eq $null))
-    #Verifica que la variable sea string
+
+    #Verifies that the string is not null
+    $StringIsNotNull=(-not($null -eq $String))
+    #Verifica that the variable is a string
     $VariableIsString=$String -is [String]
 
-    #Solo si se cumplen las condiciones, aplica el cambio
+    #Verifies that the parameter is string and not null
     if ($VariableIsString -and $StringIsNotNull){
-        #Reemplaza cada instancia de los caracteres en la lista sobre el string con su correspondiente suplente
+        #Searches for each character in the list and -if found- replaces it with it's replacement.
         foreach ($Key in $CharacterDictionary.Keys){
-            $Char_Replace=$Key #Caracter a reemplazar
-            $Char_New=$CharacterDictionary[$Key] #Caracter suplente
-            $String=$String.replace($Char_Replace,$Char_New) #Reemplaza el caracter
+            $Char_Replace=$Key #Character to replace
+            $Char_New=$CharacterDictionary[$Key] #Replacing character
+            $String=$String.replace($Char_Replace,$Char_New) #Actual replacement
         }
     }
 
-    #Devuelve el string modificado -o la variable original en caso de error-
     Return $String
+}
+
+function Wait-Progess($Wait){
+    <#
+        #Waits for a period of time (in seconds) and shows a progress bar, with a 1 second step.
+        Parameters:
+            - Wait: Wait time in seconds.
+        Returns: Nothing
+    #>
+    for ($i = 0; $i -le $Wait; $i++ ){
+        $Percentage=($i*100)/$Wait
+        Write-Progress -Activity "Task in progress." -Status ("Time elapsed: $i/"+$Wait+"s") -PercentComplete $Percentage
+        Start-Sleep 1 | out-null
+    }
 }
